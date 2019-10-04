@@ -15,7 +15,9 @@ import cv2
 def screen_record():
     kernel = np.ones((3,3),np.uint8)
     while(True):
-        image = np.array(ImageGrab.grab(bbox=(89, 160, 480, 290)).convert('L'))
+        image = np.array(ImageGrab.grab(bbox=(0, 160, 480, 290)).convert('L'))
+        
+
         bg_color = np.average(image)
         thresh_mode = 0
         if bg_color > 127:
@@ -27,22 +29,27 @@ def screen_record():
         opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
         result = cv2.cvtColor(opening, cv2.COLOR_GRAY2RGB)
 
-        dist = np.where(result == 255)
-        listOfCoordinates = list(zip(dist[0], dist[1]))
+        dino_img = np.copy(result[:-1, 0:89])
+        road_img = np.copy(result[:-1, 89:480])
+
+        x0 = 89
+        y0 = 40
+        x1 = 400
+        y1 = 40
+        
+        lineThickness = 2
+        obst = np.where(road_img == 255)
+        listOfCoordinates = list(zip(obst[0], obst[1]))
         if len(listOfCoordinates) > 0:
             listOfCoordinates.sort(key=lambda x: x[1])
-            py, px = listOfCoordinates[0]
-            lineThickness = 1
-            cv2.line(result, (10, 20), (px, py), (0,255,0), lineThickness)
+            y1, x1 = listOfCoordinates[0]
 
-        cv2.imshow('window', result)
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        cv2.line(image, (x0, y0), (x1 + 89, y1), (0,255,0), lineThickness)
+        cv2.imshow('window', image)
         if cv2.waitKey(25) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
             break
-    
-def GetScreenshot():
-    im = ImageGrab.grab(bbox=(0, 170, 489, 300)).convert('L').filter(ImageFilter.FIND_EDGES)
-    return im
 
 class Game:
     def __init__(self):
@@ -78,10 +85,50 @@ class Game:
     def duck(self):
         self._driver.find_element_by_tag_name("body").send_keys(Keys.ARROW_DOWN)
         time.sleep(0.25)
+    
+    def get_state(self):
+        kernel = np.ones((3,3),np.uint8)
+        image = np.array(ImageGrab.grab(bbox=(0, 160, 480, 290)).convert('L'))
+        
+
+        bg_color = np.average(image)
+        thresh_mode = 0
+        if bg_color > 127:
+            thresh_mode = cv2.THRESH_BINARY_INV
+        else:
+            thresh_mode = cv2.THRESH_BINARY
+
+        ret, thresh = cv2.threshold(image, 127, 255, thresh_mode)
+        opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        result = cv2.cvtColor(opening, cv2.COLOR_GRAY2RGB)
+
+        dino_img = np.copy(result[:-1, 0:89])
+        road_img = np.copy(result[:-1, 89:480])
+
+        x0 = 89
+        y0 = 40
+        x1 = 999
+        y1 = 999
+        
+        obst = np.where(road_img == 255)
+        listOfCoordinates = list(zip(obst[0], obst[1]))
+        if len(listOfCoordinates) > 0:
+            listOfCoordinates.sort(key=lambda x: x[1])
+            y1, x1 = listOfCoordinates[0]
+        
+        current_speed = self._driver.execute_script("return Runner.instance_.currentSpeed")
+        current_score = self.get_score()
+        is_crashed = self.is_crashed()
+        return (x1, y1, current_speed, current_score, is_crashed)
+
 
 if __name__ == "__main__":
     game = Game()
     game.start()
-    screen_record()
+    while True:
+        state = game.get_state()
+        print(state)
+        if state[4]:
+            break
     game.end()
     

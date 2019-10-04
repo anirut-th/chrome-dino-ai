@@ -5,6 +5,7 @@ import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from PIL import ImageGrab
 from PIL import ImageFilter
 import tensorflow as tf
@@ -80,11 +81,22 @@ class Game:
 
     def jump(self):
         self._driver.find_element_by_tag_name("body").send_keys(Keys.ARROW_UP)
-        time.sleep(0.25)
+        # time.sleep(0.25)
 
     def duck(self):
-        self._driver.find_element_by_tag_name("body").send_keys(Keys.ARROW_DOWN)
-        time.sleep(0.25)
+        ActionChains(self._driver).key_down(Keys.ARROW_DOWN) \
+            .click(self._driver.find_element_by_tag_name("body")) \
+            .key_up(Keys.ARROW_DOWN) \
+            .perform()
+        # self._driver.find_element_by_tag_name("body").send_keys(Keys.ARROW_DOWN)
+        # time.sleep(1)
+    
+    def do_action(self, action_id):
+        if action_id == 1:
+            self.jump()
+        elif action_id == 2:
+            self.duck()
+
     
     def get_state(self):
         kernel = np.ones((3,3),np.uint8)
@@ -121,14 +133,71 @@ class Game:
         is_crashed = self.is_crashed()
         return (x1, y1, current_speed, current_score, is_crashed)
 
-
-if __name__ == "__main__":
+def train():
+    # model = keras.models.load_model('model/model.h5')
+    model = keras.Sequential()
+    model.add(keras.layers.InputLayer(batch_input_shape=(1, 3)))
+    model.add(keras.layers.Dense(10, activation='sigmoid'))
+    model.add(keras.layers.Dense(10, activation='sigmoid'))
+    model.add(keras.layers.Dense(3, activation='linear'))
+    model.compile(loss='mse', optimizer='adam', metrics=['mae'])
     game = Game()
     game.start()
-    while True:
-        state = game.get_state()
-        print(state)
-        if state[4]:
-            break
+    y = 0.99
+    eps = 0.1
+    decay_factor = 0.999
+    r_avg_list = []
+    num_episodes = 200
+    for i in range(num_episodes):
+        game.restart()
+        qx, qy, qs, qr, qdone = game.get_state()
+        s = np.array([qx, qy, qs])
+        _s = np.expand_dims(s, axis=0)
+        eps *= decay_factor
+        print("Episode {} of {}".format(i + 1, num_episodes))
+        done = False
+        r_sum = 0
+        while not done:
+            print(game.get_state())
+
+            if np.random.random() < eps:
+                a = np.random.randint(0, 3)
+            else:
+                
+                a = np.argmax(model.predict(_s))
+
+            game.do_action(a)
+            time.sleep(0.25)
+            px, py, ps, pr, done = game.get_state()
+            new_s = np.array([px, py, ps])
+            _new_s = np.expand_dims(new_s, axis=0)
+            target = pr + y * np.max(model.predict(_new_s))
+            target_vec = model.predict(_s)[0]
+            target_vec[a] = target
+            model.fit(_s, target_vec.reshape(-1, 3), epochs=1, verbose=0)
+            s = new_s
+            r_sum += pr
+        r_avg_list.append(r_sum / 1000)
+
+    # game = Game()
+    # game.start()
+    # while True:
+    #     state = game.get_state()
+    #     print(state)
+    #     if state[4]:
+    #         break
+    model.save('model/model.h5')
     game.end()
+
+if __name__ == "__main__":
+    train()
+    
+    # game = Game()
+    # game.start()
+    # while True:
+    #     state = game.get_state()
+    #     print(state)
+    #     if state[4]:
+    #         break
+    # game.end()
     

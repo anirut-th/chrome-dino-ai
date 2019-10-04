@@ -13,41 +13,29 @@ from tensorflow import keras
 import cv2
  
 def screen_record():
-  
-    orb = cv2.ORB_create()
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-
-    obst = cv2.imread('data/tree1.png', 0)
-    obst_kp, obst_des = orb.detectAndCompute(obst, None)
+    kernel = np.ones((3,3),np.uint8)
     while(True):
-        image = np.array(ImageGrab.grab(bbox=(0, 160, 480, 290)).convert('L'))
-        image_kp, image_des = orb.detectAndCompute(image, None)
+        image = np.array(ImageGrab.grab(bbox=(89, 160, 480, 290)).convert('L'))
+        bg_color = np.average(image)
+        thresh_mode = 0
+        if bg_color > 127:
+            thresh_mode = cv2.THRESH_BINARY_INV
+        else:
+            thresh_mode = cv2.THRESH_BINARY
 
-        matches = bf.match(obst_des, image_des)
-        matches = sorted(matches, key = lambda x:x.distance)
+        ret, thresh = cv2.threshold(image, 127, 255, thresh_mode)
+        opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        result = cv2.cvtColor(opening, cv2.COLOR_GRAY2RGB)
 
-        good_matches = matches[:10]
+        dist = np.where(result == 255)
+        listOfCoordinates = list(zip(dist[0], dist[1]))
+        if len(listOfCoordinates) > 0:
+            listOfCoordinates.sort(key=lambda x: x[1])
+            py, px = listOfCoordinates[0]
+            lineThickness = 1
+            cv2.line(result, (10, 20), (px, py), (0,255,0), lineThickness)
 
-        src_pts = np.float32([obst_kp[m.queryIdx].pt for m in good_matches]).reshape(-1,1,2)
-        dst_pts = np.float32([image_kp[m.trainIdx].pt for m in good_matches]).reshape(-1,1,2)
-        # M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-        # matchesMask = mask.ravel().tolist()
-        # h,w = obst.shape[:2]
-        # pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
-
-        # dst = cv2.perspectiveTransform(pts,M)
-        # dst += (w, 0)  # adding offset
-
-        # draw_params = dict(matchColor = (0,255,0), # draw matches in green color
-        #             singlePointColor = None,
-        #             matchesMask = matchesMask, # draw only inliers
-        #             flags = 2)
-
-        img3 = cv2.drawMatches(obst, obst_kp, image, image_kp, good_matches, None)
-
-        # Draw bounding box in Red
-        # img3 = cv2.polylines(img3, [np.int32(dst)], True, (0,0,255),3, cv2.LINE_AA)
-        cv2.imshow('window', img3)
+        cv2.imshow('window', result)
         if cv2.waitKey(25) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
             break

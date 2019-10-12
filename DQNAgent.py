@@ -12,10 +12,10 @@ class DQNAgent:
         self.action_size = action_size
         self.memory = deque(maxlen=2000)
         self.gamma = 0.95    # discount rate
-        self.epsilon = 0.5 # exploration rate
+        self.epsilon = 0.02 # exploration rate
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
-        self.learning_rate = 0.01
+        self.learning_rate = 0.1
         self.model = self.load_model()
 
     def _build_model(self):
@@ -42,8 +42,8 @@ class DQNAgent:
         for state, action, reward, next_state, done in minibatch:
             target = reward
             if not done:
-              target = reward + self.gamma * \
-                       np.argmax(self.model.predict(next_state)[0])
+              	target = reward + self.gamma * np.argmax(self.model.predict(next_state)[0])
+			
             target_f = self.model.predict(state)
             target_f[0][action] = target
             self.model.fit(state, target_f, epochs=5, verbose=0)

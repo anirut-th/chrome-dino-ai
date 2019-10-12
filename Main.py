@@ -8,6 +8,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from PIL import ImageGrab
 from PIL import ImageFilter
+from PIL import Image
 import tensorflow as tf
 from tensorflow import keras
 import csv
@@ -17,7 +18,11 @@ from tools import find_clusters
 from tools import cal_variance
 from tools import compute_obj_size
 from DQNAgent import DQNAgent
- 
+from mss import mss
+
+mon = {'top' : 200, 'left' : 0, 'width' : 480, 'height' : 130}
+sct = mss()
+
 def screen_record():
     kernel = np.ones((3,3),np.uint8)
     font                   = cv2.FONT_HERSHEY_SIMPLEX
@@ -25,10 +30,12 @@ def screen_record():
     fontScale              = 1
     fontColor              = (255,0,0)
     lineType               = 2
-    i = 1
+    
     while(True):
-        image = np.array(ImageGrab.grab(bbox=(0, 160, 480, 290)).convert('L'))
         
+        image = np.array(sct.grab(mon))
+        image = cv2.resize(image,(480,130), interpolation=cv2.INTER_LINEAR)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         bg_color = np.average(image)
         thresh_mode = 0
         if bg_color > 127:
@@ -82,7 +89,7 @@ class Game:
     def __init__(self):
         chrome_options = Options()
         chrome_options.add_argument("disable-infobars")
-        self._driver = webdriver.Chrome(executable_path = "chromedriver.exe", chrome_options=chrome_options)
+        self._driver = webdriver.Chrome(executable_path = "/Users/potter/Documents/Dev/Projects/chrome-dino-ai/chromedriver", chrome_options=chrome_options)
         self._driver.set_window_position(x=-10,y=0)
         self._driver.set_window_size(200, 300)
         self._driver.get("chrome://dino/")
@@ -93,11 +100,12 @@ class Game:
     def start(self):
         time.sleep(0.25)
         self._driver.find_element_by_tag_name("body").send_keys(Keys.ARROW_UP)
+        time.sleep(1)
 
     def restart(self):
-        self._driver.execute_script("Runner.instance_.restart()")
-        #self._driver.refresh()
-        #self.do_action(1)
+        #self._driver.execute_script("Runner.instance_.restart()")
+        self._driver.refresh()
+        self.start()
 
     def is_crashed(self):
         return self._driver.execute_script("return Runner.instance_.crashed")
@@ -143,8 +151,9 @@ class Game:
     
     def get_state(self):
         kernel = np.ones((3,3),np.uint8)
-        image = np.array(ImageGrab.grab(bbox=(0, 160, 480, 290)).convert('L'))
-        
+        image = np.array(sct.grab(mon))
+        image = cv2.resize(image,(480,130), interpolation=cv2.INTER_LINEAR)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         bg_color = np.average(image)
         thresh_mode = 0
         if bg_color > 127:
@@ -293,7 +302,7 @@ def train2(game):
                 index = int(row[3])
                 l[index] = 0.99
                 labels.append(l)
-        print(f'Processed {line_count} lines.')
+        print('Processed {line_count} lines.')
     datas = np.asarray(datas)
     labels = np.asarray(labels)
     print(labels.shape)
@@ -314,48 +323,37 @@ def train2(game):
             s = np.array([qx, qy, qs])
             _s = np.expand_dims(s, axis=0)
             a = np.argmax(model.predict(_s))
-            game.do_action(a)
-
+ 
 if __name__ == "__main__":
     episodes = 20
     agent = DQNAgent(5, 3)
     game = Game()
     game.start()
     total_reward = 0
-    for e in range(episodes):
-        game.restart()
-        time.sleep(3)
-        state, r, d = game.get_state()
-        state = np.reshape(state, [1, 5])
-        for time_t in range(50000):
-            action = agent.act(state)
-            game.do_action(action)
-            next_state, reward, done = game.get_state()
-            next_state = np.reshape(next_state, [1, 5])
-            agent.remember(state, action, reward, next_state, done)
-            state = next_state
-            if done:
-                # print the score and break out of the loop
-                print("episode: {}/{}, score: {}"
-                      .format(e, episodes, reward))
-                total_reward = total_reward + reward
-                break
-            time.sleep(0.25)
+    try:
+        for e in range(episodes):
+            game.restart()
+            time.sleep(2.7)
+            state, r, d = game.get_state()
+            state = np.reshape(state, [1, 5])
+            for time_t in range(50000):
+                action = agent.act(state)
+                game.do_action(action)
+                next_state, reward, done = game.get_state()
+                next_state = np.reshape(next_state, [1, 5])
+                agent.remember(state, action, reward, next_state, done)
+                state = next_state
+                if done:
+                    print("episode: {}/{}, score: {}"
+                            .format(e, episodes, reward))
+                    total_reward = total_reward + reward
+                    break
+            agent.replay(32)
+    except:
+        agent.save_model()
+        game.end()
 
-        agent.replay(8)
     agent.save_model()
     game.end()
     print('average reward:', total_reward / episodes)
-    #train(game)
-    # while not game.is_crashed():
-    #     print(game.get_state())
-    # #train(game)
-    # # chrome_options = Options()
-    # # chrome_options.add_argument("disable-infobars")
-    # # driver = webdriver.Chrome(executable_path = "chromedriver.exe", chrome_options=chrome_options)
-    # # driver.set_window_position(x=-10,y=0)
-    # # driver.set_window_size(200, 300)
-    # # driver.get("chrome://dino/")
-    # # screen_record()
-    # game.end()
     
